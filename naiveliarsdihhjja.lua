@@ -2,6 +2,21 @@ if not LPH_ENCSTR then LPH_ENCSTR = function(str) return str end end
 if not LPH_NO_VIRTUALIZE then LPH_NO_VIRTUALIZE = function(func) return func end end
 if not LPH_OBFUSCATED then LPH_OBFUSCATED = false end
 
+do
+    local key = nil
+    pcall(function()
+        local p = getgenv() and getgenv()['Platinun']
+        if type(p) == 'table' then
+            key = p['License Key'] or p.LicenseKey
+        end
+    end)
+    if type(key) == 'string' and #key > 0 then
+        script_key = key   -- <-- real global, same place as original script_key = ""
+    else
+        script_key = ""    -- fallback so loader still sees the name
+    end
+end
+
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
