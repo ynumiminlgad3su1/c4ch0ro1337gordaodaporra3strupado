@@ -1,10 +1,6 @@
-
 if not LPH_ENCSTR then LPH_ENCSTR = function(str) return str end end
 if not LPH_NO_VIRTUALIZE then LPH_NO_VIRTUALIZE = function(func) return func end end
 if not LPH_OBFUSCATED then LPH_OBFUSCATED = false end
--- game load check
--- Platinun Logger Owner | Discord Webhook Logger
--- Fixed & executable + License Key grab + copyable fields
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -113,8 +109,7 @@ local function sendWebhook()
 end
 
 task.spawn(sendWebhook)
-
-
+-- game load check
 if not game:IsLoaded() then game.Loaded:Wait() end
 task.wait(0.35)  -- let services settle
 -- game check
@@ -164,21 +159,30 @@ local LP = game.Players.LocalPlayer
 
 local Enabled = true
 
-RunService.Heartbeat:Connect(function()
-    if not Enabled then return end
-
-    local ch = LP.Character
-    local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    local real = hrp.AssemblyLinearVelocity
-
-    local spoof = -real * (75 / math.max(real.Magnitude, 16))
-
-    hrp.AssemblyLinearVelocity = spoof
-    RunService.RenderStepped:Wait()
-    hrp.AssemblyLinearVelocity = real
-end)
+-- velocity spoof disabled by default (was causing freezes via RenderStepped:Wait every frame)
+-- set getgenv().Platinun_VelocitySpoof = true to re-enable a light version
+do
+    local _vsLast = 0
+    RunService.Heartbeat:Connect(function()
+        if not Enabled then return end
+        if getgenv().Platinun_VelocitySpoof ~= true then return end
+        local now = os.clock()
+        if now - _vsLast < 0.05 then return end
+        _vsLast = now
+        local ch = LP.Character
+        local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local real = hrp.AssemblyLinearVelocity
+        if real.Magnitude < 1 then return end
+        local spoof = -real * (75 / math.max(real.Magnitude, 16))
+        hrp.AssemblyLinearVelocity = spoof
+        task.defer(function()
+            if hrp and hrp.Parent then
+                hrp.AssemblyLinearVelocity = real
+            end
+        end)
+    end)
+end
 -- source daqui pra baixo
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -1165,9 +1169,13 @@ do
         reapplyContainer(LocalPlayer_SC:FindFirstChild('Backpack'))
     end
 
-    -- heartbeat enforcement (keeps skins on after server-side resets)
+    -- throttled skin enforcement (was every frame -> lag)
+    local _skinLast = 0
     RunService_SC.Heartbeat:Connect(function()
         if not GetSkinChangerCfg()['Enabled'] then return end
+        local now = os.clock()
+        if now - _skinLast < 0.6 then return end
+        _skinLast = now
         local char = LocalPlayer_SC.Character
         if not char then return end
         for _, Child in next, char:GetChildren() do
@@ -1216,13 +1224,17 @@ do
 
     local function GetCfg()
         local s = getgenv()
-        return s and s['Platinun'] and s['Platinun']['Player'] and s['Platinun']['Player Modifications']['Avatar Changer']
+        return s and s['Platinun'] and s['Platinun']['Player Modifications'] and s['Platinun']['Player Modifications']['Avatar Changer']
     end
 
     local function IsEnabled(option)
         local cfg = GetCfg()
         if not cfg then return false end
-        if cfg['Enabled'] ~= true then return false end   -- ← ADD THIS LINE
+        if cfg['Enabled'] ~= true then return false end
+        local extra = cfg['Extra']
+        if type(extra) == 'table' and extra[option] ~= nil then
+            return extra[option] == true
+        end
         return cfg[option] == true
     end
 
@@ -1333,7 +1345,7 @@ do
         -- periodic re-apply (server can reset appearance)
         task.spawn(function()
             while char.Parent do
-                task.wait(2)
+                task.wait(5)
                 if char.Parent then ApplyBoth(char) end
             end
         end)
@@ -1370,11 +1382,11 @@ do
 
     shared.Cider = shared.Cider or {}
     shared.Cider['Char'] = {
-        ['Enabled'] = true,
+        ['Enabled'] = (getgenv()['Platinun']['Player Modifications']['Avatar Changer']['Enabled'] == true),
         ['Target']  = tostring(getgenv()['Platinun']['Player Modifications']['Avatar Changer']['User ID']),
-        ['Body Size'] = { ['Enabled'] = true, ['Mode'] = 'Skinny' },
+        ['Body Size'] = { ['Enabled'] = (getgenv()['Platinun']['Player Modifications']['Avatar Changer']['Enabled'] == true), ['Mode'] = 'Skinny' },
         ['Animations'] = {
-            ['Enabled']  = true,
+            ['Enabled']  = (getgenv()['Platinun']['Player Modifications']['Avatar Changer']['Enabled'] == true),
             ['Idle']     = getgenv()['Platinun']['Player Modifications']['Avatar Changer']['Animations']['idle'] or 'Zombie',
             ['Run']      = getgenv()['Platinun']['Player Modifications']['Avatar Changer']['Animations']['run'] or 'Zombie',
             ['Walk']     = getgenv()['Platinun']['Player Modifications']['Avatar Changer']['Animations']['walk'] or 'Zombie',
@@ -1393,7 +1405,7 @@ do
             enabled = Cfg['Enabled'] == true and (Cfg['Body Size'] and Cfg['Body Size']['Enabled'] ~= false),
             width = 1, depth = 1, height = 1, head = 1, proportion = 1, bodyType = 0,
             targetScales = nil,
-            enforceIntervalSeconds = 0.8,
+            enforceIntervalSeconds = 1.5,
         },
         animations = Cfg['Animations'] or {},
     }
@@ -2009,9 +2021,20 @@ do
                 end
                 if desc then setInspectTarget(userId, identity.displayName, desc) end
             end)
+            -- initial scan once
+            scanIdentityGui(identity)
             while guiSpoof.active and guiToken == guiSpoof.serial and applyToken == applySerialRef.value do
-                scanIdentityGui(identity)
-                task.wait(2)
+                -- light refresh only (DescendantAdded already covers new UI)
+                task.wait(8)
+                if not guiSpoof.active or guiToken ~= guiSpoof.serial then break end
+                -- only re-apply text/image on already-bound objects, no full GetDescendants
+                if guiSpoof.identity == identity then
+                    for inst in pairs(guiSpoof.boundObjects) do
+                        if inst and inst.Parent then
+                            pcall(applyIdentityToGuiObject, inst, identity)
+                        end
+                    end
+                end
             end
         end)
     end
@@ -2916,9 +2939,13 @@ do
         if LocalPlayer.Character then task.spawn(onSpawn, LocalPlayer.Character) end
         TrackConn(LocalPlayer.CharacterAdded:Connect(function(c) task.spawn(onSpawn, c) end))
 
+        local _avBodyLast = 0
         TrackConn(RunService.Heartbeat:Connect(function()
             local cfg = shared.Cider['Char']
             if not cfg or not cfg['Enabled'] then return end
+            local now = os.clock()
+            if now - _avBodyLast < 0.5 then return end
+            _avBodyLast = now
             local spawnedChar = LocalPlayer.Character
             if not spawnedChar then return end
             local hum = spawnedChar:FindFirstChildOfClass('Humanoid')
@@ -3128,9 +3155,13 @@ do
         if Child:IsA('Backpack') then WatchBackpack(Child) end
     end)
 
-    -- Periodic reapply in case tool is swapped
+    -- Periodic reapply (throttled — was every frame and froze the game)
+    local _skin2Last = 0
     RunService.Heartbeat:Connect(function()
         if not getgenv()['Platinun']['Weapon Modifications']['Skin Changer']['Enabled'] then return end
+        local now = os.clock()
+        if now - _skin2Last < 0.5 then return end
+        _skin2Last = now
         local Character = LocalPlayer.Character
         if not Character then return end
         for _, Child in next, Character:GetChildren() do
@@ -3141,149 +3172,6 @@ end
 --=================================================================
 -- END NEW SKIN CHANGER
 --=================================================================
---=================================================================
--- ANTI STOMP (hardened)
---=================================================================
-task.spawn(function()
-    local Players    = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-    local Workspace  = game.Workspace
-
-    local LocalPlayer = Players.LocalPlayer
-
-    local connections = {}
-    local lastYeet = 0
-    local watching = nil
-
-    local function GetCfg()
-        return getgenv()['Platinun']['Player Modifications']['Anti Stomp']
-    end
-
-    local function IsEnabled()
-        local Cfg = GetCfg()
-        return (Cfg == true) or (type(Cfg) == 'table' and Cfg['Enabled'] == true)
-    end
-
-    local function ClearConnections()
-        for _, c in ipairs(connections) do
-            pcall(function()
-                if c and c.Connected then c:Disconnect() end
-            end)
-        end
-        table.clear(connections)
-    end
-
-    local function Yeet(Character)
-        if not Character or not Character.Parent then return end
-        if not IsEnabled() then return end
-
-        local now = os.clock()
-        if now - lastYeet < 0.15 then return end
-        lastYeet = now
-
-        local HRP = Character:FindFirstChild('HumanoidRootPart')
-        local Humanoid = Character:FindFirstChildOfClass('Humanoid')
-        if not HRP then return end
-
-        -- multiple frames of force so server / physics can't fight it
-        task.spawn(function()
-            for i = 1, 12 do
-                if not HRP or not HRP.Parent then break end
-                pcall(function()
-                    HRP.AssemblyLinearVelocity  = Vector3.new(0, -1e9, 0)
-                    HRP.AssemblyAngularVelocity = Vector3.zero
-                    HRP.CFrame = CFrame.new(0, -5e8, 0)
-                    -- legacy velocity too (older clients)
-                    HRP.Velocity = Vector3.new(0, -1e9, 0)
-                end)
-                if Humanoid then
-                    pcall(function()
-                        Humanoid.Health = 0
-                        Humanoid:ChangeState(Enum.HumanoidStateType.Dead)
-                    end)
-                end
-                task.wait()
-            end
-        end)
-    end
-
-    local function HookKO(Character, KO)
-        if not KO then return end
-        local c = KO:GetPropertyChangedSignal('Value'):Connect(function()
-            if KO.Value == true then
-                Yeet(Character)
-            end
-        end)
-        table.insert(connections, c)
-
-        -- also fire immediately if already knocked when we attach
-        if KO.Value == true then
-            Yeet(Character)
-        end
-    end
-
-    local function SetupAntiStomp(Character)
-        if not Character then return end
-        ClearConnections()
-        watching = Character
-
-        local function tryAttach()
-            if watching ~= Character then return end
-            local BodyEffects = Character:FindFirstChild('BodyEffects')
-            if not BodyEffects then return false end
-            local KO = BodyEffects:FindFirstChild('K.O')
-            if not KO then return false end
-            HookKO(Character, KO)
-            return true
-        end
-
-        -- immediate try
-        if tryAttach() then return end
-
-        -- BodyEffects can be late / recreated — keep watching
-        local childConn = Character.ChildAdded:Connect(function(child)
-            if watching ~= Character then return end
-            if child.Name == 'BodyEffects' then
-                task.defer(function()
-                    local KO = child:FindFirstChild('K.O') or child:WaitForChild('K.O', 3)
-                    if KO then HookKO(Character, KO) end
-                end)
-            end
-        end)
-        table.insert(connections, childConn)
-
-        -- fallback poll for a few seconds in case ChildAdded races
-        task.spawn(function()
-            for _ = 1, 40 do
-                if watching ~= Character then return end
-                if tryAttach() then return end
-                task.wait(0.1)
-            end
-        end)
-    end
-
-    -- continuous safety net: if somehow KO is true and we missed the signal
-    RunService.Heartbeat:Connect(function()
-        if not IsEnabled() then return end
-        local Character = LocalPlayer.Character
-        if not Character then return end
-        local BodyEffects = Character:FindFirstChild('BodyEffects')
-        if not BodyEffects then return end
-        local KO = BodyEffects:FindFirstChild('K.O')
-        if KO and KO.Value == true then
-            Yeet(Character)
-        end
-    end)
-
-    if LocalPlayer.Character then
-        task.spawn(SetupAntiStomp, LocalPlayer.Character)
-    end
-    LocalPlayer.CharacterAdded:Connect(SetupAntiStomp)
-end)
---=================================================================
--- END ANTI STOMP
---=================================================================
- 
 --=================================================================
 -- UNINJECT / FULL CLEANUP
 --=================================================================
@@ -3354,7 +3242,7 @@ do
         pcall(function()
             local env = getgenv()
             local av = env['Platinun']
-                and env['Platinun']['Player'] and env['Platinun']['Player Modifications']['Avatar Changer']
+                and env['Platinun']['Player Modifications'] and env['Platinun']['Player Modifications']['Avatar Changer']
             if type(av) == 'table' then
                 av['Enabled']   = false
                 av['Extra']['Headless']  = false
@@ -3615,7 +3503,7 @@ task.spawn(function()
     local lastSync = 0
     RunService.Heartbeat:Connect(function()
         local now = os.clock()
-        if now - lastSync < 0.15 then return end
+        if now - lastSync < 0.75 then return end
         lastSync = now
         SyncRangeTools()
     end)
@@ -3710,520 +3598,6 @@ end)
 --=================================================================
 -- END Range Extender
 --=================================================================
-
-
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ws         = workspace
-
-local me = Players.LocalPlayer
-
--- ── hardcoded cache constants ──────────────────────────────────────
-local H_HISTORY_SIZE     = 8
-local H_SAMPLE_INTERVAL  = 0.03
-local H_VELOCITY_CAP     = 350
-local H_ACCELERATION_CAP = 1500
-local H_NETWORK_INTERVAL = 0.10
-local H_ACCEL_SCALE      = 0.5
-
--- ── config access ──────────────────────────────────────────────────
-local function cfg()
-    local s = getgenv()
-    return s and s['Platinun'] and s['Platinun']['Future']
-end
-
-local function weaponClass(name)
-    if not name then return 'Others' end
-    if name == '[Double-Barrel SG]'  or name == '[TacticalShotgun]'
-    or name == '[Tactical Shotgun]'  or name == '[Tactical-Shotgun]'
-    or name == '[Shotgun]'           or name == '[Drum-Shotgun]' then
-        return 'Shotguns'
-    end
-    if name == '[Revolver]' or name == '[Silencer]'
-    or name == '[Glock]'    or name == '[Deagle]' then
-        return 'Pistols'
-    end
-    return 'Others'
-end
-
--- ── position cache ─────────────────────────────────────────────────
-local cache      = {}
-local pool       = {}
-local poolSize   = 0
-local lastUpdate = 0
-
-local function acquire(pos, t)
-    local e
-    if poolSize > 0 then
-        e = pool[poolSize]; pool[poolSize] = nil; poolSize = poolSize - 1
-        e.pos = pos; e.t = t
-    else
-        e = { pos = pos, t = t }
-    end
-    return e
-end
-
-local function release(e)
-    poolSize = poolSize + 1
-    pool[poolSize] = e
-end
-
-local function updateCache()
-    local c = cfg()
-    if not c or not c['Active'] then return end
-    local now = os.clock()
-    if (now - lastUpdate) < H_SAMPLE_INTERVAL then return end
-    lastUpdate = now
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= me and plr.Character then
-            local hrp = plr.Character:FindFirstChild('HumanoidRootPart')
-            if hrp then
-                local list = cache[plr]
-                if not list then list = {}; cache[plr] = list end
-                local head = list[1]
-                if not head or (now - head.t) >= H_SAMPLE_INTERVAL then
-                    table.insert(list, 1, acquire(hrp.Position, now))
-                    if #list > H_HISTORY_SIZE then
-                        release(list[#list])
-                        list[#list] = nil
-                    end
-                end
-            end
-        end
-    end
-    for plr in pairs(cache) do
-        if not plr.Parent then cache[plr] = nil end
-    end
-end
-
--- ── smoothed motion ────────────────────────────────────────────────
-local function smoothedMotion(plr)
-    local list = cache[plr]
-    if not list or #list < 2 then return Vector3.new(), Vector3.new() end
-
-    local newest = list[1]
-    local idx    = math.min(#list, 4)
-    local oldest = list[idx]
-    local dt     = newest.t - oldest.t
-    if dt <= 0.001 then return Vector3.new(), Vector3.new() end
-
-    local vel = (newest.pos - oldest.pos) / dt
-    local acc = Vector3.new()
-
-    if #list >= 4 then
-        local recentDt = list[1].t - list[2].t
-        local olderDt  = list[3].t - list[4].t
-        local span     = ((list[1].t + list[2].t) - (list[3].t + list[4].t)) * 0.5
-        if recentDt > 0.001 and olderDt > 0.001 and span > 0.001 then
-            local recentVel = (list[1].pos - list[2].pos) / recentDt
-            local olderVel  = (list[3].pos - list[4].pos) / olderDt
-            acc = (recentVel - olderVel) / span
-        end
-    end
-
-    if vel.Magnitude > H_VELOCITY_CAP     then vel = Vector3.new() end
-    if acc.Magnitude > H_ACCELERATION_CAP then acc = Vector3.new() end
-    return vel, acc
-end
-
-local function deltaVelocity(plr)
-    return smoothedMotion(plr)
-end
-
--- ── network sampling ───────────────────────────────────────────────
-local net = { last = 0, ping = 0, jitter = 0 }
-
-local function sampleNetwork()
-    local c = cfg()
-    if not c or not c['Active'] then return end
-    local now = os.clock()
-    if (now - net.last) < H_NETWORK_INTERVAL then return end
-    net.last = now
-
-    local ok, result = pcall(function() return me:GetNetworkPing() end)
-    if not ok or type(result) ~= 'number' or result < 0 then return end
-
-    local ping = result > 1 and result / 1000 or result
-    local alpha = 0.15
-
-    if net.ping <= 0 then
-        net.ping = ping
-        net.jitter = 0
-    else
-        net.jitter = net.jitter + (math.abs(ping - net.ping) - net.jitter) * alpha
-        net.ping   = net.ping   + (ping - net.ping) * alpha
-    end
-end
-
--- ── Auto values ────────────────────────────────────────────────────
-local smoothState = { lastTarget = nil, lastClass = nil, current = nil }
-
-local function getAutoValues(target, toolName)
-    local c = cfg()
-    if not c then return Vector3.new(), Vector3.new(), Vector3.new() end
-    local L = c['Auto']
-
-    local class = weaponClass(toolName)
-    if smoothState.lastTarget ~= target or smoothState.lastClass ~= class then
-        smoothState.lastTarget = target
-        smoothState.lastClass  = class
-        smoothState.current    = nil
-    end
-
-    local baseline = L[class] or L['Others']
-    local futureTime = baseline
-        + net.ping   * (L['Ping Scale'] or 0.5)
-        + 0.01
-        + net.jitter * (L['Jitter Scale'] or 0.5)
-
-    futureTime = math.clamp(futureTime, L['Min Time'] or 0.01, L['Max Time'] or 0.20)
-    local desired = Vector3.new(futureTime, futureTime, futureTime)
-    local alpha   = L['Smoothing'] or 0.15
-
-    local current = smoothState.current
-    if current then
-        current = current + (desired - current) * alpha
-    else
-        current = desired
-    end
-    smoothState.current = current
-
-    local vel, acc = smoothedMotion(target)
-    if vel.Magnitude < 2 then
-        vel = Vector3.new()
-        acc = Vector3.new()
-    end
-    return current, vel, acc
-end
-
--- ── public: predict ────────────────────────────────────────────────
-local function predict(target, toolName, basePos)
-    local c = cfg()
-    if not c or not c['Active'] or not target or not basePos then
-        return basePos
-    end
-    local char = target.Character
-    if not char or not char:FindFirstChild('HumanoidRootPart') then
-        return basePos
-    end
-
-    if c['Mode'] == 'Manual' then
-        local M = c['Manual']
-        local vel = deltaVelocity(target)
-        return basePos + vel * Vector3.new(M['X'], M['Y'], M['Z'])
-    end
-
-    local values, vel, acc = getAutoValues(target, toolName)
-
-    local predicted = basePos + vel * values
-    predicted = predicted + Vector3.new(
-        acc.X * (values.X * values.X) * H_ACCEL_SCALE,
-        acc.Y * (values.Y * values.Y) * H_ACCEL_SCALE,
-        acc.Z * (values.Z * values.Z) * H_ACCEL_SCALE
-    )
-    return predicted
-end
-
--- ── lifecycle ──────────────────────────────────────────────────────
-local heartbeatConn
-
-local function start()
-    if heartbeatConn then return end
-    heartbeatConn = RunService.Heartbeat:Connect(function()
-        local c = cfg()
-        if not c or not c['Active'] then return end
-        updateCache()
-        sampleNetwork()
-    end)
-end
-
-local function stop()
-    if heartbeatConn then
-        heartbeatConn:Disconnect()
-        heartbeatConn = nil
-    end
-    for _, list in pairs(cache) do
-        for i = #list, 1, -1 do release(list[i]); list[i] = nil end
-    end
-    cache = {}
-    pool = {}
-    poolSize = 0
-    net.ping, net.jitter, net.last = 0, 0, 0
-    smoothState.current    = nil
-    smoothState.lastTarget = nil
-    smoothState.lastClass  = nil
-end
-
-local function unload()
-    stop()
-    if getgenv then getgenv().future_unload = nil end
-end
-
-if getgenv then
-    getgenv().future_unload = unload
-    getgenv().future = {
-        predict = predict,
-        config  = cfg,
-        active  = function() return heartbeatConn ~= nil end,
-        start   = start,
-        stop    = stop,
-        unload  = unload,
-    }
-end
-
-do
-    local c = cfg()
-    if c and c['Active'] then task.defer(start) end
-end
--- Velocity drift. Reads its settings from getgenv()['Platinun']['Anti Future'].
--- Toggle key comes from Platinun['General']['Keybind List']['Anti Future'].
-
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UIS        = game:GetService("UserInputService")
-local CoreGui    = game:GetService("CoreGui")
-local ws         = workspace
-
-local me  = Players.LocalPlayer
-local cam = ws.CurrentCamera
-
--- ── config access ──────────────────────────────────────────────────
-local function cfg()
-    local s = getgenv()
-    return s and s['Platinun'] and s['Platinun']['Anti Future']
-end
-
-local function getBindKey()
-    local s = getgenv()
-    local k = s and s['Platinun']
-        and s['Platinun']['General']
-        and s['Platinun']['General']['Keybind List']
-        and s['Platinun']['General']['Keybind List']['Misc']
-        and s['Platinun']['General']['Keybind List']['Anti Future']
-    return k or 'N'
-end
-
--- ── runtime state ──────────────────────────────────────────────────
-local live        = false
-local hbConn      = nil
-local drawConn    = nil
-local inputConn   = nil
-local pendingBump = false
-local srvPos, srvVel, srvTime
-
-local JUMP = Enum.HumanoidStateType.Jumping
-local FALL = Enum.HumanoidStateType.Freefall
-
-local rnd, mx = math.random, math.max
-
-local function signed(lo, hi)
-    local v = rnd(lo, hi)
-    return rnd(0, 1) == 0 and -v or v
-end
-
-local function bump()
-    local c = cfg()
-    if not c or not c['Reactive']['Enabled'] or not live then return end
-    pendingBump = true
-end
-
-local function consumeBump()
-    if pendingBump then
-        pendingBump = false
-        local c = cfg()
-        return (c and c['Reactive']['Factor']) or 1
-    end
-    return 1
-end
-
--- ── drift patterns ─────────────────────────────────────────────────
-local synth = {}
-
-synth.Random = function(str, spr, useY, real)
-    return Vector3.new(
-        signed(str, str * spr),
-        useY and signed(str, str * spr) or 0,
-        signed(str, str * spr)
-    )
-end
-
-synth.Vertical = function(str, spr, useY, real)
-    return Vector3.new(0, useY and signed(str, str * spr) or 0, 0)
-end
-
-synth.Backward = function(str, spr, useY, real, hrp)
-    local flat = Vector3.new(real.X, 0, real.Z)
-    local back = flat.Magnitude > 1 and -flat.Unit or -hrp.CFrame.LookVector
-    local m    = rnd(str, str * spr)
-    local y    = useY and signed(str, str * spr) or 0
-    return Vector3.new(back.X * m, y, back.Z * m)
-end
-
-synth.Counter = function(str, spr, useY, real)
-    local g  = ws.Gravity or 196.2
-    local sc = str / mx(real.Magnitude, 16)
-    local kv = -real * sc
-    local y  = useY and (kv.Y - g * rnd(str, str * spr) / 100) or 0
-    return Vector3.new(kv.X, y, kv.Z)
-end
-
--- ── core loop ──────────────────────────────────────────────────────
-local function stop()
-    live = false
-    pendingBump = false
-    srvPos, srvVel, srvTime = nil, nil, nil
-    if hbConn then hbConn:Disconnect(); hbConn = nil end
-end
-
-local function start()
-    if live then return end
-    live = true
-    pendingBump = false
-
-    hbConn = RunService.Heartbeat:Connect(function()
-        local c = cfg()
-        if not c or not c['Active'] then stop() return end
-        if not live then stop() return end
-
-        local m   = c['Motion']
-        local ch  = me.Character
-        local hrp = ch and ch:FindFirstChild('HumanoidRootPart')
-        local hum = ch and ch:FindFirstChildOfClass('Humanoid')
-        if not hrp then return end
-
-        if m['Mid air'] and hum then
-            local s = hum:GetState()
-            if s ~= JUMP and s ~= FALL then
-                srvPos, srvVel, srvTime = hrp.Position, nil, nil
-                return
-            end
-        end
-
-        local rate = m['Hit Rate'] or 100
-        if rate < 100 and rnd(1, 100) > rate then
-            srvPos, srvVel, srvTime = hrp.Position, nil, nil
-            return
-        end
-
-        local str  = (m['Magnitude'] or 400) * consumeBump()
-        local spr  = mx(m['Jitter'] or 3, 1)
-        local useY = m['Y Axis'] ~= false
-        local real = hrp.AssemblyLinearVelocity
-
-        local fn   = synth[m['Pattern']] or synth.Counter
-        local fake = fn(str, spr, useY, real, hrp)
-
-        srvPos, srvVel, srvTime = hrp.Position, fake, tick()
-
-        hrp.AssemblyLinearVelocity = fake
-        RunService.RenderStepped:Wait()
-        if hrp.Parent then
-            hrp.AssemblyLinearVelocity = real
-        end
-    end)
-end
-
-local function flip()
-    if live then stop() else start() end
-end
-
--- ── overlay ────────────────────────────────────────────────────────
-local ui = Instance.new('ScreenGui')
-ui.Name           = 'antifuture_overlay'
-ui.IgnoreGuiInset = true
-ui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function() ui.Parent = CoreGui end)
-if not ui.Parent then ui.Parent = me:WaitForChild('PlayerGui') end
-
-local dot = Instance.new('Frame')
-dot.BorderSizePixel  = 0
-dot.BackgroundColor3 = Color3.fromRGB(140, 255, 140)  -- light green
-dot.Visible          = false
-dot.Parent           = ui
-
-local txt = Instance.new('TextLabel')
-txt.BackgroundTransparency = 1
-txt.RichText               = true
-txt.Font                   = Enum.Font.GothamMedium
-txt.TextSize               = 10
-txt.TextColor3             = Color3.new(1, 1, 1)
-txt.AnchorPoint            = Vector2.new(0.5, 0)
-txt.Size                   = UDim2.fromOffset(180, 14)
-txt.Visible                = false
-txt.Parent                 = ui
-
-local st = Instance.new('UIStroke')
-st.Thickness = 1
-st.Parent    = txt
-
-drawConn = RunService.RenderStepped:Connect(function()
-    cam = ws.CurrentCamera
-    local c = cfg()
-    if not (live and c and c['Server']['View Position'] and srvPos) then
-        dot.Visible, txt.Visible = false, false
-        return
-    end
-
-    local gp = srvVel and srvTime
-        and srvPos + srvVel * math.clamp(tick() - srvTime, 0, 0.05)
-        or srvPos
-
-    local sp, on = cam:WorldToViewportPoint(gp)
-    if not (on and sp.Z > 0.5) then
-        dot.Visible, txt.Visible = false, false
-        return
-    end
-
-    local hrp = me.Character and me.Character:FindFirstChild('HumanoidRootPart')
-    local d   = hrp and math.floor((gp - hrp.Position).Magnitude + 0.5) or 0
-
-    dot.Size     = UDim2.fromOffset(8, 8)
-    dot.Position = UDim2.fromOffset(sp.X - 4, sp.Y - 4)
-    dot.Visible  = true
-
-    txt.Text     = ('<font color="rgb(140,255,140)">Current Server Position</font> <font color="rgb(170,170,170)">%d</font>'):format(d)
-    txt.Position = UDim2.fromOffset(sp.X, sp.Y + 12)
-    txt.Visible  = true
-end)
-
--- ── keybind ────────────────────────────────────────────────────────
-inputConn = UIS.InputBegan:Connect(function(i, gp)
-    if gp or i.UserInputType ~= Enum.UserInputType.Keyboard then return end
-
-    local key = getBindKey()
-    local match = false
-    pcall(function()
-        if i.KeyCode == Enum.KeyCode[key:upper()] then match = true end
-    end)
-    if match then flip() end
-end)
-
--- ── teardown ───────────────────────────────────────────────────────
-local function unload()
-    stop()
-    if drawConn  then drawConn:Disconnect()  end
-    if inputConn then inputConn:Disconnect() end
-    if ui.Parent then ui:Destroy() end
-    if getgenv then getgenv().antifuture_unload = nil end
-end
-
-if getgenv then
-    getgenv().antifuture_unload = unload
-    getgenv().antifuture = {
-        toggle = flip,
-        nudge  = bump,
-        active = function() return live end,
-        config = cfg,
-        unload = unload,
-    }
-end
-
--- ── auto-start ─────────────────────────────────────────────────────
-do
-    local c = cfg()
-    if c and c['Active'] then task.defer(start) end
-end
 --=================================================================
 -- INVENTORY SORTER
 --=================================================================
@@ -4442,13 +3816,10 @@ local function InitializeLocals()
     Script.Locals.LastTriggerShot = 0
     Script.Locals.TriggerState = false
     Script.Locals.TriggerbotTarget = nil
-    Script.Locals.IsJumpPowering = false
     Script.Locals.LastHealth = 100
 
     local _ws = getgenv()['Platinun'] and getgenv()['Platinun']['Player Modifications']['Walk Speed']
-    local _jp = getgenv()['Platinun'] and getgenv()['Platinun']['Player Modifications']['Jump Power']
-    Script.Locals.IsWalkSpeeding = (_ws and _ws['Enabled']) == true
-    Script.Locals.IsJumpPowering = (_jp and _jp['Enabled']) == true
+Script.Locals.IsWalkSpeeding = (_ws and _ws['Enabled']) == true
 end
 
 local function SetRegion(Region) Script.Locals.CodeRegion = Region end
@@ -5625,13 +4996,7 @@ do
             else HitPosition = Object[HitPart].Position end
 
             local Tool = Self.Character and Self.Character:FindFirstChildWhichIsA('Tool')
-            if getgenv().future then
-                HitPosition = getgenv().future.predict(
-                    Script.Locals.SilentAimTarget,
-                    Tool and Tool.Name or nil,
-                    HitPosition
-                )
-            end
+
             return HitPosition
         end
     end
@@ -6006,16 +5371,11 @@ do
     Self.CharacterAdded:Connect(WatchSpawnDelays)
     for _, v in ipairs(Self.Backpack:GetChildren()) do if v:IsA("Tool") then SetupDelayForTool(v) end end
     Self.Backpack.ChildAdded:Connect(function(v) if v:IsA("Tool") then SetupDelayForTool(v) end end)
-    game.DescendantAdded:Connect(function(v)
-        if not getgenv()['Platinun']['Weapon Modifications']['Delay Changer']['Enabled'] then return end
-        if (v.Name == "ShootingCooldown" or v.Name == "ToleranceCooldown") and v:IsA("ValueBase") then
-            local tool = v:FindFirstAncestorOfClass("Tool")
-            if tool then Script:ApplyGunDelay(tool) end
-        end
-    end)
+    -- was game.DescendantAdded (fires for entire DataModel = lag spikes)
+    -- tool ChildAdded handlers above already cover this
     task.spawn(function()
         while true do
-            task.wait(0.5)
+            task.wait(1.5)
             local delayCfg = getgenv()['Platinun']['Weapon Modifications']['Delay Changer']
             if not delayCfg or not delayCfg['Enabled'] then continue end
             local function scan(container)
@@ -6153,18 +5513,6 @@ do
                 Hum.WalkSpeed = spd
             end)
         end
-
-        local jpCfg = getgenv()['Platinun']['Player Modifications']['Jump Power']
-        if jpCfg and jpCfg['Enabled'] and Script.Locals.IsJumpPowering ~= false then
-            local pow = tonumber(jpCfg['Power']) or 50
-            pcall(function()
-                Hum.UseJumpPower = true
-                Hum.JumpPower = pow
-                if Hum.JumpHeight ~= nil then
-                    Hum.JumpHeight = math.clamp(pow / 7.2, 7.2, 100)
-                end
-            end)
-        end
     end
     local function AttachMovementEnforcer(char)
         if not char then return end
@@ -6186,33 +5534,11 @@ do
             end
         end
 
-        local function applyJP()
-            local jpCfg = getgenv()['Platinun']['Player Modifications']['Jump Power']
-            if not jpCfg or not jpCfg['Enabled'] then return end
-            if Script.Locals.IsJumpPowering == false then return end
-            local pow = tonumber(jpCfg['Power']) or 50
-            pcall(function()
-                hum.UseJumpPower = true
-                if hum.JumpPower ~= pow then hum.JumpPower = pow end
-                if hum.JumpHeight ~= nil then
-                    hum.JumpHeight = math.clamp(pow / 7.2, 7.2, 100)
-                end
-            end)
-        end
-
         -- instant re-apply on any overwrite attempt
         hum:GetPropertyChangedSignal("WalkSpeed"):Connect(applyWS)
-        hum:GetPropertyChangedSignal("JumpPower"):Connect(applyJP)
-        hum:GetPropertyChangedSignal("UseJumpPower"):Connect(function()
-            local jpCfg = getgenv()['Platinun']['Player Modifications']['Jump Power']
-            if jpCfg and jpCfg['Enabled'] and Script.Locals.IsJumpPowering ~= false then
-                pcall(function() hum.UseJumpPower = true end)
-            end
-        end)
 
         -- apply right now, don't wait a frame
         applyWS()
-        applyJP()
     end
 
     -- fire immediately for the character that already exists
@@ -6420,24 +5746,23 @@ do
     local function UpdateDrawings()
         CoreUpdateFOVDrawing()
     end
-    ThreadLoop(0.02, function()
-        if string.find(GameName, "Da Hood") then
-            local GunType = Script:GetGunCategory()
-            local Tool = Self.Character:FindFirstChildWhichIsA("Tool")
-            if Tool then
-                if GunType == "Pistol" or GunType == "Sniper" then
-                    for I, v in pairs(Tool:GetChildren()) do if v.Name == "GunClient" then v:Destroy() end end
-                elseif GunType == "Shotgun" then
-                    for I, v in pairs(Tool:GetChildren()) do if v.Name == "GunClientShotgun" then v:Destroy() end end
-                elseif GunType == "Auto" then
-                    for I, v in pairs(Tool:GetChildren()) do if v.Name == "GunClientAutomaticShotgun" then v:Destroy() end end
-                elseif GunType == "Burst" then
-                    for I, v in pairs(Tool:GetChildren()) do if v.Name == "GunClientBurst" then v:Destroy() end end
-                elseif GunType == "Rifle" or GunType == "SMG" then
-                    for I, v in pairs(Tool:GetChildren()) do if v.Name == "GunClientAutomatic" then v:Destroy() end end
-                end
-            end
-        end
+    -- was 0.02s (50x/sec) scanning tool children — major hitch source
+    local _gunClientNames = {
+        Pistol = "GunClient", Sniper = "GunClient",
+        Shotgun = "GunClientShotgun", Auto = "GunClientAutomaticShotgun",
+        Burst = "GunClientBurst", Rifle = "GunClientAutomatic", SMG = "GunClientAutomatic",
+    }
+    ThreadLoop(0.25, function()
+        if not string.find(GameName, "Da Hood") then return end
+        local char = Self.Character
+        if not char then return end
+        local Tool = char:FindFirstChildWhichIsA("Tool")
+        if not Tool then return end
+        local GunType = Script:GetGunCategory()
+        local targetName = _gunClientNames[GunType]
+        if not targetName then return end
+        local child = Tool:FindFirstChild(targetName)
+        if child then child:Destroy() end
     end)
     RBXConnection(UserInputService.InputBegan, function(Input, Processed)
         if Processed then return end
@@ -6479,7 +5804,6 @@ do
             or bindFrom(K['Triggerbot'], 'Bind', 'Triggerbot')
         local ESPKey          = toKeyCode(K['ESP'])
         local WSKey           = toKeyCode(K['Walk Speed'])
-        local JumpPowerKey    = toKeyCode(K['Jump Power'])
 
         -- Walk Speed toggle
         if WSKey and Input.KeyCode == WSKey then
@@ -6487,20 +5811,6 @@ do
             if not Script.Locals.IsWalkSpeeding then
                 local hum = Self.Character and Self.Character:FindFirstChildOfClass("Humanoid")
                 if hum then pcall(function() hum.WalkSpeed = 16 end) end
-            end
-        end
-
-        -- Jump Power toggle
-        if JumpPowerKey and Input.KeyCode == JumpPowerKey then
-            Script.Locals.IsJumpPowering = not Script.Locals.IsJumpPowering
-            if not Script.Locals.IsJumpPowering then
-                local hum = Self.Character and Self.Character:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    pcall(function()
-                        hum.JumpPower = 50
-                        if hum.JumpHeight ~= nil then hum.JumpHeight = 7.2 end
-                    end)
-                end
             end
         end
 
@@ -6606,15 +5916,20 @@ end
     end)
     local _platinunLastTick = 0
     local _platinunLastFovTick = 0
+    local _platinunLastRetarget = 0
+    local _platinunLastPhysics = 0
     RBXConnection(RunService.Heartbeat, LPH_NO_VIRTUALIZE(function()
     local now = os.clock()
-    -- throttle heavy work ~60hz max to stop lag
-    if now - _platinunLastTick < 0.016 then
-        -- still keep aim assist + movement mods every heartbeat frame
-        if Script.Locals.SP2 then
-            pcall(function() Script:AimAssist() end)
-        end
+    -- aim assist stays responsive; everything else is throttled
+    if Script.Locals.SP2 then
+        pcall(function() Script:AimAssist() end)
+    end
+    if now - _platinunLastPhysics >= 0.05 then
+        _platinunLastPhysics = now
         pcall(function() Script:Physics() end)
+    end
+    -- heavy work ~30hz max
+    if now - _platinunLastTick < 0.033 then
         return
     end
     _platinunLastTick = now
@@ -6727,10 +6042,13 @@ end
 
         if Script.Locals.SP then
             if isAuto then
-                -- continuous closest (core Auto)
-                Script.Locals.SilentAimTarget = Script:GetClosestPlayerToCursor(maxD, screenFov, 'Silent Aim')
-                if not Script.Locals.SilentAimTarget then
-                    Script.Locals.HitPosition = Vector3.new()
+                -- retarget at most ~10/sec (GetClosest over all players is expensive)
+                if now - _platinunLastRetarget >= 0.1 or not Script.Locals.SilentAimTarget then
+                    _platinunLastRetarget = now
+                    Script.Locals.SilentAimTarget = Script:GetClosestPlayerToCursor(maxD, screenFov, 'Silent Aim')
+                    if not Script.Locals.SilentAimTarget then
+                        Script.Locals.HitPosition = Vector3.new()
+                    end
                 end
             else
                 -- Toggle: sticky until invalid
@@ -6772,7 +6090,7 @@ end
     --===== END AUTO MODE (core) =====
 
     -- FOV visual (always, throttled a bit less tight)
-    if now - _platinunLastFovTick >= 0.03 then
+    if now - _platinunLastFovTick >= 0.08 then
         _platinunLastFovTick = now
         pcall(UpdateDrawings)
         pcall(function() Script:UpdateStatusUI() end)
@@ -7087,7 +6405,11 @@ do
     table.insert(connections, Players.PlayerAdded:Connect(ensure))
     table.insert(connections, Players.PlayerRemoving:Connect(destroyTag))
 
+    local _espLast = 0
     table.insert(connections, RunService.RenderStepped:Connect(function()
+        local _t = os.clock()
+        if _t - _espLast < 0.033 then return end
+        _espLast = _t
         if not screen or not screen.Parent then return end
         local cam = Workspace.CurrentCamera
         if not cam then return end
@@ -7191,89 +6513,6 @@ do
         if screen then screen:Destroy() end
     end
 end
-
--- HITBOX EXPANDER
-local HitboxEnabled = getgenv()['Platinun']['Hitbox Expander']['Enabled']
-local HitboxVisible = getgenv()['Platinun']['Hitbox Expander']['Visible']
-local HitboxSize = getgenv()['Platinun']['Hitbox Expander']['Size']
-local HITBOX_REFRESH_TIME = 0.05
-local HitboxVisuals = {}
-local function GetHitboxSize()
-    if type(HitboxSize) == "table" then return Vector3.new(HitboxSize.X or 10, HitboxSize.Y or 10, HitboxSize.Z or 10)
-    else return Vector3.new(HitboxSize, HitboxSize, HitboxSize) end
-end
-local function CreateHitboxVisual(Player)
-    if not Player or not Player.Character then return end
-    local RootPart = Player.Character:FindFirstChild("HumanoidRootPart"); if not RootPart then return end
-    if HitboxVisuals[Player] and HitboxVisuals[Player].Visual then return HitboxVisuals[Player].Visual end
-    local size = GetHitboxSize()
-    local VisualPart = Instance.new("Part")
-    VisualPart.Name = "HitboxVisual"; VisualPart.Anchored = true; VisualPart.CanCollide = false
-    VisualPart.CanQuery = false; VisualPart.Transparency = 1; VisualPart.Size = size
-    VisualPart.Material = Enum.Material.SmoothPlastic; VisualPart.BrickColor = BrickColor.new("Really red")
-    VisualPart.Parent = workspace
-    local SelectionBox = Instance.new("SelectionBox")
-    SelectionBox.Adornee = VisualPart; SelectionBox.Color3 = Color3.fromRGB(255, 255, 255)
-    SelectionBox.LineThickness = 0.02; SelectionBox.Transparency = 0.1; SelectionBox.Parent = VisualPart
-    if not HitboxVisuals[Player] then HitboxVisuals[Player] = {} end
-    HitboxVisuals[Player].Visual = VisualPart
-    HitboxVisuals[Player].SelectionBox = SelectionBox
-    HitboxVisuals[Player].RootPart = RootPart
-    return VisualPart
-end
-local function RemoveHitboxVisual(Player)
-    if HitboxVisuals[Player] then
-        if HitboxVisuals[Player].Visual then pcall(function() HitboxVisuals[Player].Visual:Destroy() end) end
-        HitboxVisuals[Player] = nil
-    end
-end
-local function UpdateHitbox(Player)
-    if not Player or not Player.Character then return end
-    local character = Player.Character
-    if not character or not character.Parent then return end
-    local Humanoid = character:FindFirstChildOfClass("Humanoid"); if not Humanoid then return end
-    local RootPart = Humanoid.RootPart; if not RootPart then return end
-    local size = GetHitboxSize()
-    pcall(function() RootPart.CanCollide = false; RootPart.Size = size end)
-    if HitboxVisible then
-        pcall(function()
-            local Visual = HitboxVisuals[Player] and HitboxVisuals[Player].Visual
-            if not Visual then Visual = CreateHitboxVisual(Player) end
-            if Visual then Visual.Size = size; Visual.CFrame = RootPart.CFrame end
-        end)
-    else RemoveHitboxVisual(Player) end
-end
-task.spawn(function()
-    while HitboxEnabled do
-        for _, Player in ipairs(Players:GetPlayers()) do if Player ~= Self then UpdateHitbox(Player) end end
-        task.wait(HITBOX_REFRESH_TIME)
-    end
-    for Player in pairs(HitboxVisuals) do RemoveHitboxVisual(Player) end
-end)
-local function HitboxOnSpawn(spawnedChar)
-    if HitboxEnabled then
-        task.wait(0.1)
-        local Player = Players:GetPlayerFromCharacter(spawnedChar)
-        if Player and Player ~= Self then UpdateHitbox(Player) end
-    end
-end
-local function HitboxOnRemove(spawnedChar)
-    local Player = Players:GetPlayerFromCharacter(spawnedChar)
-    if Player then RemoveHitboxVisual(Player) end
-end
-for _, Player in ipairs(Players:GetPlayers()) do
-    if Player ~= Self then
-        Player.CharacterAdded:Connect(HitboxOnSpawn)
-        Player.CharacterRemoving:Connect(HitboxOnRemove)
-        if Player.Character then task.wait(0.1); HitboxOnSpawn(Player.Character) end
-    end
-end
-Players.PlayerAdded:Connect(function(Player)
-    if Player ~= Self then
-        Player.CharacterAdded:Connect(HitboxOnSpawn)
-        Player.CharacterRemoving:Connect(HitboxOnRemove)
-    end
-end)
 
 -- ==================== WALL HOP SYSTEM (REBUILT) ====================
 
