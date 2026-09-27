@@ -2,8 +2,6 @@ if not LPH_ENCSTR then LPH_ENCSTR = function(str) return str end end
 if not LPH_NO_VIRTUALIZE then LPH_NO_VIRTUALIZE = function(func) return func end end
 if not LPH_OBFUSCATED then LPH_OBFUSCATED = false end
 
-script_key = (getgenv().Platinun and getgenv().Platinun['License Key']) or ""
-
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
