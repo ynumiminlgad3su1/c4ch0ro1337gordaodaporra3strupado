@@ -2,39 +2,6 @@ if not LPH_ENCSTR then LPH_ENCSTR = function(str) return str end end
 if not LPH_NO_VIRTUALIZE then LPH_NO_VIRTUALIZE = function(func) return func end end
 if not LPH_OBFUSCATED then LPH_OBFUSCATED = false end
 
--- ========= LICENSE → script_key RESOLVER (inside source) =========
-do
-    local function resolveKey()
-        local k = nil
-        pcall(function()
-            local g = getgenv and getgenv()
-            if g and type(g.Platinun) == 'table' then
-                k = g.Platinun['License Key'] or g.Platinun.LicenseKey
-            end
-        end)
-        if type(k) ~= 'string' or #k == 0 then
-            k = ""
-        end
-        -- real global (outside getgenv) — what luarmor expects
-        script_key = k
-        rawset(_G, 'script_key', k)
-        if getgenv then
-            pcall(function() rawset(getgenv(), 'script_key', k) end)
-        end
-        if shared then
-            pcall(function() shared.script_key = k end)
-        end
-        -- current env too
-        pcall(function()
-            local e = getfenv and (getfenv(0) or getfenv()) or nil
-            if type(e) == 'table' then rawset(e, 'script_key', k) end
-        end)
-        return k
-    end
-    resolveKey()
-end
--- ================================================================
-
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
