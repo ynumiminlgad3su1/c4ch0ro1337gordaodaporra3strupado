@@ -1,6 +1,6 @@
-if getgenv().gravitycc_cleanup then
-	getgenv().gravitycc_cleanup();
-	getgenv().gravitycc_cleanup = nil;
+if getgenv().Morphinecc_cleanup then
+	getgenv().Morphinecc_cleanup();
+	getgenv().Morphinecc_cleanup = nil;
 end;
 
 if not LPH_OBFUSCATED then
@@ -133,7 +133,7 @@ local Inset = GuiService:GetGuiInset().Y
 
 
 local function GetConfig()
-	return shared.gravity;
+	return shared.Morphine;
 end
 
 local function GetFovSize(value, fallback)
@@ -156,7 +156,7 @@ local WatchCharacter = nil;
 local WatchBackpack = nil;
 
 local function UpdateConfig(newConfig)
-	shared.gravity = newConfig;
+	shared.Morphine = newConfig;
 	Config = newConfig;
 
 
@@ -196,7 +196,7 @@ function ErrHandler(err)
 	return err;
 end;
 
-local PreviousState = shared.__gravity_state;
+local PreviousState = shared.__Morphine_state;
 
 State = {
 	Connections = {},
@@ -228,7 +228,7 @@ State = {
 	DoubleTapActive = false,
 
 };
-shared.__gravity_state = State;
+shared.__Morphine_state = State;
 
 CachedIgnored = Workspace:FindFirstChild('Ignored');
 CachedBush = Workspace:FindFirstChild('Bush');
@@ -1204,7 +1204,7 @@ local function TryLoadEmulatedGunHandler()
 
 	local chunk, compileErr = loadstring(EmbeddedGunHandlerSource, '@embedded dumped gunhandler.lua');
 	if not chunk then
-		warn('gravity error: gunhandler emulation failed;', compileErr);
+		warn('Morphine error: gunhandler emulation failed;', compileErr);
 		return nil;
 	end;
 
@@ -1235,7 +1235,7 @@ local function TryLoadEmulatedGunHandler()
 
 	local okExec, result = pcall(chunk);
 	if not okExec or type(result) ~= 'table' or type(result.shoot) ~= 'function' or type(result.getAim) ~= 'function' then
-		warn('gravity error: gunhandler emulation failed;', result);
+		warn('Morphine error: gunhandler emulation failed;', result);
 		return nil;
 	end;
 
@@ -2583,7 +2583,7 @@ end;
 SilentTargetLocked = false;
 
 UtilityUI = Instance.new('ScreenGui');
-UtilityUI.Name = 'gravityui';
+UtilityUI.Name = 'Morphineui';
 UtilityUI.IgnoreGuiInset = true;
 UtilityUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
 UtilityUI.Parent = CoreGui;
@@ -2883,7 +2883,7 @@ function Cleanup()
 	end;
 end;
 
-getgenv().gravitycc_cleanup = Cleanup;
+getgenv().Morphinecc_cleanup = Cleanup;
 
 TrackConn(Players.PlayerRemoving:Connect(function(Player)
 end));
@@ -3163,7 +3163,7 @@ TrackConn(UserInputService.InputBegan:Connect(function(Input, GameProcessed)
 end));
 
 TrackConn(RunService.Heartbeat:Connect(LPH_JIT_MAX(function()
-	Config = shared.gravity or Config;
+	Config = shared.Morphine or Config;
 	UpdatePositionCache();
 	CachedIgnored = Workspace:FindFirstChild('Ignored');
 	CachedBush = Workspace:FindFirstChild('Bush');
@@ -4999,10 +4999,10 @@ do
     local okEnv, env = pcall(function() return getgenv() end)
     if not okEnv then env = nil end
 
-    -- Char config lives on shared.gravity (main config table)
-    shared.gravity = shared.gravity or {}
-    if type(shared.gravity['Char']) ~= 'table' then
-        shared.gravity['Char'] = {
+    -- Char config lives on shared.Morphine (main config table)
+    shared.Morphine = shared.Morphine or {}
+    if type(shared.Morphine['Char']) ~= 'table' then
+        shared.Morphine['Char'] = {
             ['Enabled'] = true,
             ['Target'] = 'keptmywords',
             ['Body Size'] = {
@@ -5023,10 +5023,10 @@ do
         }
     end
     -- alias for this subsystem
-    shared.gravity = shared.gravity or {}
-    shared.gravity['Char'] = shared.gravity['Char']
+    shared.Morphine = shared.Morphine or {}
+    shared.Morphine['Char'] = shared.Morphine['Char']
 
-    local Cfg = shared.gravity['Char']
+    local Cfg = shared.Morphine['Char']
     local CONFIG = {
         target = Cfg['Target'] or '',
         changer = {
@@ -6220,7 +6220,7 @@ do
     end
 
     local function applyAnims(character)
-        local cfg = shared.gravity['Char'] and shared.gravity['Char']['Animations']
+        local cfg = shared.Morphine['Char'] and shared.Morphine['Char']['Animations']
         if not cfg or cfg['Enabled'] == false then return end
         local animate = character:FindFirstChild('Animate'); if not animate then return end
         local hum = character:FindFirstChildOfClass('Humanoid'); if not hum then return end
@@ -6517,7 +6517,7 @@ do
 
     local function apply(userId)
         if not runtime.active then return end
-        if not (shared.gravity['Char'] and shared.gravity['Char']['Enabled']) then return end
+        if not (shared.Morphine['Char'] and shared.Morphine['Char']['Enabled']) then return end
         local char = LocalPlayer.Character
         if not char then return end
         runtime.applySerial = runtime.applySerial + 1
@@ -6562,14 +6562,14 @@ do
         animState.active = true
 
         local uid = resolveUserToId(CONFIG.target)
-        if not uid then warn('[gravity Char] could not resolve target:', CONFIG.target) end
+        if not uid then warn('[Morphine Char] could not resolve target:', CONFIG.target) end
 
         if LocalPlayer.Character then task.spawn(onSpawn, LocalPlayer.Character) end
         TrackConn(LocalPlayer.CharacterAdded:Connect(function(c) task.spawn(onSpawn, c) end))
 
         local _avBodyLast = 0
         TrackConn(RunService.Heartbeat:Connect(function()
-            local cfg = shared.gravity['Char']
+            local cfg = shared.Morphine['Char']
             if not cfg or not cfg['Enabled'] then return end
             local now = os.clock()
             if now - _avBodyLast < 0.5 then return end
@@ -6591,7 +6591,7 @@ do
 
         TrackConn(RunService.Heartbeat:Connect(function()
             if not emoteState.active then return end
-            local cfg = shared.gravity['Char']
+            local cfg = shared.Morphine['Char']
             if not cfg or not cfg['Enabled'] then return end
             if not emoteState._nextPulse or os.clock() >= emoteState._nextPulse then
                 emoteState._nextPulse = os.clock() + 2
